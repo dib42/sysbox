@@ -78,6 +78,25 @@ function get_host_distro() {
   echo $distro
 }
 
+function cgv2_root_evacuate() {
+
+  # Cgroup-v2 hack: move all processes out of the test container's cgroup root,
+	# as otherwise sub-cgroups created by container managers inside the test
+	# container (e.g., Docker, CRI-O, etc) will start with "domain invalid" type
+	# and thus be set to "threaded" type, thereby causing the kernel to disable
+	# non-threaded cgroup controllers inside the test container (e.g., docker run
+	# --memory=128GB ...)  won't work inside the test container.
+
+	if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+		mkdir -p /sys/fs/cgroup/init
+		for pid in $(cat /sys/fs/cgroup/cgroup.procs); do
+			if ps -p $pid > /dev/null; then
+				echo $pid > /sys/fs/cgroup/init/cgroup.procs
+			fi
+		done
+	fi
+}
+
 # Ensures user "sysbox" is present on the host
 function setup_sysbox_user() {
    local exit_code=0
@@ -283,6 +302,7 @@ function sysbox_setup() {
     exit 1
   fi
 
+  cgv2_root_evacuate
   setup_sysbox_user
   userns_setup "$distro"
   kernel_config_setup "$distro"
